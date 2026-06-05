@@ -1,0 +1,1108 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Combat Zone</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #0a0a0a; color: #fff; font-family: 'Courier New', monospace; overflow: hidden; user-select: none; }
+canvas { display: block; }
+
+#ui { position: fixed; inset: 0; pointer-events: none; }
+#crosshair { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 20px; height: 20px; z-index: 100; }
+#crosshair::before, #crosshair::after { content: ''; position: absolute; background: rgba(255,255,255,0.9); }
+#crosshair::before { width: 2px; height: 100%; left: 9px; top: 0; }
+#crosshair::after { width: 100%; height: 2px; top: 9px; left: 0; }
+
+#hud { position: fixed; bottom: 20px; left: 0; right: 0; display: flex; justify-content: space-between; align-items: flex-end; padding: 0 24px; pointer-events: none; }
+#health-bar-wrap { display: flex; align-items: center; gap: 10px; }
+#health-label { color: #ff4444; font-size: 13px; font-weight: bold; letter-spacing: 2px; }
+#health-bar { width: 200px; height: 10px; background: #333; border: 1px solid #666; border-radius: 2px; }
+#health-fill { height: 100%; background: linear-gradient(90deg, #ff2222, #ff6644); border-radius: 2px; transition: width 0.2s; }
+#ammo-info { text-align: right; }
+#weapon-name { font-size: 18px; font-weight: bold; color: #ffcc00; letter-spacing: 3px; }
+#ammo-count { font-size: 13px; color: #aaa; margin-top: 2px; }
+#kills-display { position: fixed; top: 20px; right: 24px; text-align: right; pointer-events: none; }
+#kills-label { font-size: 12px; color: #888; letter-spacing: 2px; }
+#kills-count { font-size: 32px; font-weight: bold; color: #ffcc00; }
+#minimap { position: fixed; top: 20px; left: 24px; width: 120px; height: 120px; background: rgba(0,0,0,0.6); border: 1px solid #444; border-radius: 4px; }
+#minimap canvas { width: 100%; height: 100%; }
+
+#scoreboard { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); background: rgba(0,0,0,0.92); border: 1px solid #444; border-radius: 8px; padding: 20px 30px; min-width: 400px; display: none; z-index: 200; pointer-events: none; }
+#scoreboard h2 { text-align: center; color: #ffcc00; letter-spacing: 4px; font-size: 14px; margin-bottom: 16px; }
+#score-list { font-size: 13px; }
+.score-row { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid #222; }
+.score-row .name { color: #fff; }
+.score-row .kills { color: #ffcc00; }
+.score-row .deaths { color: #ff4444; }
+#score-hint { text-align: center; color: #555; font-size: 11px; margin-top: 12px; letter-spacing: 1px; }
+
+#weapon-switch { position: fixed; bottom: 70px; right: 24px; display: flex; gap: 8px; pointer-events: none; }
+.weapon-slot { width: 50px; height: 50px; background: rgba(0,0,0,0.5); border: 1px solid #444; border-radius: 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 9px; color: #888; gap: 2px; transition: all 0.1s; }
+.weapon-slot.active { border-color: #ffcc00; background: rgba(255,204,0,0.15); }
+.weapon-slot .slot-icon { font-size: 18px; }
+.weapon-slot .slot-num { font-size: 10px; color: #666; }
+
+#hit-flash { position: fixed; inset: 0; background: rgba(255,0,0,0.25); opacity: 0; pointer-events: none; transition: opacity 0.1s; }
+#kill-feed { position: fixed; top: 80px; right: 24px; font-size: 12px; pointer-events: none; }
+.kill-entry { color: #ffcc00; margin-bottom: 4px; opacity: 1; transition: opacity 1s; text-shadow: 0 0 6px rgba(255,204,0,0.5); }
+
+#death-screen { position: fixed; inset: 0; background: rgba(180,0,0,0.35); display: none; align-items: center; justify-content: center; flex-direction: column; z-index: 300; }
+#death-screen h2 { font-size: 48px; color: #ff2222; letter-spacing: 8px; text-shadow: 0 0 30px #ff0000; }
+#respawn-timer { font-size: 18px; color: #ffcc00; margin-top: 12px; }
+
+/* --- MENUS --- */
+.screen { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: #0a0a0a; z-index: 1000; flex-direction: column; }
+.screen.hidden { display: none; }
+
+#home-screen { background: radial-gradient(ellipse at 50% 80%, #1a1200 0%, #0a0a0a 60%); }
+.game-title { font-size: 64px; font-weight: 900; letter-spacing: 12px; color: #ffcc00; text-shadow: 0 0 40px rgba(255,204,0,0.3); margin-bottom: 8px; }
+.game-subtitle { font-size: 13px; letter-spacing: 6px; color: #555; margin-bottom: 60px; }
+.menu-btn { background: transparent; border: 1px solid #444; color: #ccc; padding: 14px 48px; font-family: 'Courier New', monospace; font-size: 15px; letter-spacing: 4px; cursor: pointer; margin: 6px; width: 260px; transition: all 0.2s; text-align: center; }
+.menu-btn:hover { border-color: #ffcc00; color: #ffcc00; background: rgba(255,204,0,0.05); }
+.menu-btn.primary { border-color: #ffcc00; color: #ffcc00; }
+
+#name-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 2000; flex-direction: column; gap: 16px; }
+#name-modal.hidden { display: none; }
+#name-modal h2 { font-size: 18px; letter-spacing: 4px; color: #ffcc00; }
+#name-input { background: #111; border: 1px solid #444; color: #fff; padding: 12px 20px; font-family: 'Courier New', monospace; font-size: 16px; letter-spacing: 2px; width: 280px; outline: none; }
+#name-input:focus { border-color: #ffcc00; }
+
+#bots-screen { background: radial-gradient(ellipse at 50% 80%, #1a1200 0%, #0a0a0a 60%); }
+#friends-screen { background: radial-gradient(ellipse at 50% 80%, #001a1a 0%, #0a0a0a 60%); }
+.section-title { font-size: 20px; letter-spacing: 6px; color: #ffcc00; margin-bottom: 30px; }
+.code-display { font-size: 42px; letter-spacing: 12px; color: #00ffcc; font-weight: bold; margin: 16px 0; text-shadow: 0 0 20px rgba(0,255,200,0.4); }
+.code-label { font-size: 11px; color: #555; letter-spacing: 3px; margin-bottom: 6px; }
+.players-list { width: 320px; background: #111; border: 1px solid #333; border-radius: 4px; min-height: 120px; max-height: 200px; overflow-y: auto; margin: 12px 0; padding: 8px; }
+.player-item { padding: 6px 10px; border-bottom: 1px solid #222; font-size: 13px; color: #ccc; display: flex; align-items: center; gap: 8px; }
+.player-item .dot { width: 6px; height: 6px; border-radius: 50%; background: #00ff88; }
+.join-box { display: flex; gap: 8px; margin: 8px 0; }
+.join-box input { background: #111; border: 1px solid #444; color: #fff; padding: 10px 14px; font-family: 'Courier New', monospace; font-size: 15px; letter-spacing: 3px; width: 160px; outline: none; text-transform: uppercase; }
+.join-box input:focus { border-color: #00ffcc; }
+.small-btn { background: transparent; border: 1px solid #555; color: #aaa; padding: 10px 20px; font-family: 'Courier New', monospace; font-size: 12px; letter-spacing: 2px; cursor: pointer; transition: all 0.2s; }
+.small-btn:hover { border-color: #00ffcc; color: #00ffcc; }
+select.menu-select { background: #111; border: 1px solid #444; color: #ccc; padding: 10px 16px; font-family: 'Courier New', monospace; font-size: 13px; letter-spacing: 2px; cursor: pointer; width: 260px; margin: 6px 0; outline: none; }
+.separator { width: 260px; border: none; border-top: 1px solid #222; margin: 16px 0; }
+.info-text { font-size: 11px; color: #444; letter-spacing: 2px; margin: 4px 0; }
+.back-btn { position: absolute; top: 24px; left: 24px; background: transparent; border: none; color: #555; font-family: 'Courier New', monospace; font-size: 13px; cursor: pointer; letter-spacing: 2px; }
+.back-btn:hover { color: #ffcc00; }
+
+#add-bots-section { width: 260px; margin: 8px 0; }
+
+/* --- PAUSE MENU --- */
+#pause-menu {
+  position: fixed; inset: 0; z-index: 500;
+  display: none; align-items: center; justify-content: center; flex-direction: column;
+  background: rgba(0,0,0,0.75);
+  backdrop-filter: blur(3px);
+}
+#pause-menu.visible { display: flex; }
+#pause-box {
+  border: 1px solid #444; border-radius: 4px;
+  background: #0d0d0d;
+  padding: 40px 48px;
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  min-width: 300px;
+}
+#pause-title {
+  font-size: 22px; letter-spacing: 8px; color: #ffcc00;
+  margin-bottom: 24px; font-weight: 900;
+}
+#pause-hint {
+  font-size: 10px; color: #333; letter-spacing: 2px; margin-top: 14px;
+}
+.pause-btn {
+  background: transparent; border: 1px solid #444; color: #ccc;
+  padding: 12px 0; font-family: 'Courier New', monospace;
+  font-size: 13px; letter-spacing: 4px; cursor: pointer;
+  width: 220px; transition: all 0.2s; text-align: center;
+}
+.pause-btn:hover { border-color: #ffcc00; color: #ffcc00; background: rgba(255,204,0,0.05); }
+.pause-btn.danger:hover { border-color: #ff4444; color: #ff4444; background: rgba(255,0,0,0.05); }
+
+/* pause button in-game */
+#pause-ingame-btn {
+  position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+  background: rgba(0,0,0,0.55); border: 1px solid #333; color: #666;
+  font-family: 'Courier New', monospace; font-size: 11px; letter-spacing: 3px;
+  padding: 6px 16px; cursor: pointer; pointer-events: all; z-index: 400;
+  transition: all 0.2s;
+}
+#pause-ingame-btn:hover { border-color: #ffcc00; color: #ffcc00; }
+</style>
+</head>
+<body>
+
+<!-- NAME MODAL -->
+<div id="name-modal">
+  <h2>הכנס את שמך</h2>
+  <input id="name-input" maxlength="16" placeholder="שם שחקן..." autofocus />
+  <button class="menu-btn primary" onclick="confirmName()">אישור</button>
+</div>
+
+<!-- HOME SCREEN -->
+<div id="home-screen" class="screen hidden">
+  <div class="game-title">COMBAT</div>
+  <div class="game-subtitle">ZONE · TACTICAL SHOOTER</div>
+  <div id="home-welcome" style="font-size:13px;color:#666;letter-spacing:3px;margin-bottom:30px;"></div>
+  <button class="menu-btn primary" onclick="showBotsScreen()">▶ בוטים</button>
+  <button class="menu-btn" onclick="showFriendsScreen()">◈ חברים</button>
+</div>
+
+<!-- BOTS SCREEN -->
+<div id="bots-screen" class="screen hidden">
+  <button class="back-btn" onclick="backToHome()">← חזרה</button>
+  <div class="section-title">מצב בוטים</div>
+  <div class="info-text">20 שחקנים · כולם על כולם</div>
+  <hr class="separator">
+  <button class="menu-btn primary" onclick="startBotGame()">▶ שחק</button>
+</div>
+
+<!-- FRIENDS SCREEN -->
+<div id="friends-screen" class="screen hidden">
+  <button class="back-btn" onclick="backToHome()">← חזרה</button>
+  <div class="section-title">מצב חברים</div>
+  <div id="friends-host-section">
+    <div class="code-label">קוד החדר שלך:</div>
+    <div class="code-display" id="room-code-display">---</div>
+    <div class="info-text">שתף את הקוד עם חברים</div>
+    <div class="players-list" id="players-list">
+      <div class="player-item"><span class="dot"></span><span id="host-name-display">אתה (מארח)</span></div>
+    </div>
+    <hr class="separator">
+    <div id="add-bots-section">
+      <div class="code-label" style="margin-bottom:6px;">הוסף בוטים למשחק:</div>
+      <select class="menu-select" id="bots-count-select">
+        <option value="0">ללא בוטים נוספים</option>
+        <option value="5">5 בוטים</option>
+        <option value="10">10 בוטים</option>
+        <option value="15">15 בוטים</option>
+      </select>
+    </div>
+    <div class="code-label" style="margin-top:12px;">מצב משחק:</div>
+    <select class="menu-select" id="game-mode-select">
+      <option value="ffa">כולם על כולם</option>
+      <option value="teams">קבוצות (2 שחקנים)</option>
+    </select>
+    <button class="menu-btn primary" style="margin-top:16px;" onclick="startFriendsGame()">▶ התחל משחק</button>
+  </div>
+  <hr class="separator">
+  <div>
+    <div class="code-label">הצטרף לחדר:</div>
+    <div class="join-box">
+      <input id="join-code-input" maxlength="6" placeholder="ABC123" />
+      <button class="small-btn" onclick="joinRoom()">Join</button>
+    </div>
+    <div id="join-status" style="font-size:11px;color:#ff4444;min-height:16px;"></div>
+  </div>
+</div>
+
+<!-- GAME CANVAS -->
+<canvas id="gameCanvas"></canvas>
+
+<!-- HUD -->
+<div id="ui">
+  <div id="crosshair"></div>
+  <div id="hit-flash"></div>
+  <div id="hud">
+    <div id="health-bar-wrap">
+      <span id="health-label">HP</span>
+      <div id="health-bar"><div id="health-fill" style="width:100%"></div></div>
+      <span id="health-num" style="font-size:13px;color:#ff6644;">100</span>
+    </div>
+    <div id="ammo-info">
+      <div id="weapon-name">M16</div>
+      <div id="ammo-count">30 / 90</div>
+    </div>
+  </div>
+  <div id="weapon-switch">
+    <div class="weapon-slot active" id="slot1"><span class="slot-icon">🔫</span><span style="font-size:9px;color:#aaa;">M16</span><span class="slot-num">1</span></div>
+    <div class="weapon-slot" id="slot2"><span class="slot-icon">🔫</span><span style="font-size:9px;color:#aaa;">אקדח</span><span class="slot-num">2</span></div>
+    <div class="weapon-slot" id="slot3"><span class="slot-icon">🚀</span><span style="font-size:9px;color:#aaa;">בזוקה</span><span class="slot-num">3</span></div>
+    <div class="weapon-slot" id="slot4"><span class="slot-icon">💥</span><span style="font-size:9px;color:#aaa;">RPG</span><span class="slot-num">4</span></div>
+  </div>
+  <div id="kills-display">
+    <div id="kills-label">KILLS</div>
+    <div id="kills-count">0</div>
+  </div>
+  <div id="minimap"><canvas id="minimapCanvas" width="120" height="120"></canvas></div>
+  <div id="kill-feed"></div>
+</div>
+
+<div id="scoreboard">
+  <h2>לוח תוצאות</h2>
+  <div id="score-list"></div>
+  <div id="score-hint">TAB — סגור</div>
+</div>
+
+<div id="death-screen">
+  <h2>ELIMINATED</h2>
+  <div id="respawn-timer">מתחיל מחדש בעוד 3...</div>
+</div>
+
+<!-- PAUSE MENU -->
+<div id="pause-menu">
+  <div id="pause-box">
+    <div id="pause-title">PAUSED</div>
+    <button class="pause-btn" onclick="resumeGame()">&#9654; המשך משחק</button>
+    <button class="pause-btn" onclick="restartGame()">&#8635; התחל מחדש</button>
+    <button class="pause-btn danger" onclick="quitToMenu()">&#10005; צא לתפריט הראשי</button>
+    <div id="pause-hint">ESC — חזור למשחק</div>
+  </div>
+</div>
+
+<!-- in-game pause button -->
+<button id="pause-ingame-btn" style="display:none;" onclick="openPause()">&#9646;&#9646; ESC — עצור</button>
+
+<script>
+// ==================== STATE ====================
+let playerName = '';
+let gameMode = 'bots';
+let teamMode = 'ffa';
+let roomCode = '';
+let playerList = [];
+let gameRunning = false;
+let gamePaused = false;
+let botsCount = 20;
+
+const WEAPONS = [
+  { name: 'M16',    key: '1', icon: '🔫', damage: 25, rate: 200,  ammo: 30, maxAmmo: 30, reserve: 90,  spread: 0.04, auto: true,  speed: 22, color: '#ffcc00', splash: 0 },
+  { name: 'אקדח',   key: '2', icon: '🔫', damage: 40, rate: 500,  ammo: 12, maxAmmo: 12, reserve: 48,  spread: 0.06, auto: false, speed: 20, color: '#aaaaff', splash: 0 },
+  { name: 'בזוקה',  key: '3', icon: '🚀', damage: 80, rate: 1500, ammo: 1,  maxAmmo: 1,  reserve: 6,   spread: 0.01, auto: false, speed: 14, color: '#ff6600', splash: 80 },
+  { name: 'RPG',    key: '4', icon: '💥', damage:120, rate: 2000, ammo: 1,  maxAmmo: 1,  reserve: 4,   spread: 0.01, auto: false, speed: 12, color: '#ff2200', splash: 120 },
+];
+
+// MAP
+const MAP_W = 2400, MAP_H = 1800;
+const TILE = 60;
+let map = [];
+let obstacles = [];
+
+function generateMap() {
+  map = [];
+  obstacles = [];
+  for (let y = 0; y < MAP_H/TILE; y++) {
+    map[y] = [];
+    for (let x = 0; x < MAP_W/TILE; x++) {
+      map[y][x] = 0;
+    }
+  }
+  // border walls
+  for (let x = 0; x < MAP_W/TILE; x++) { map[0][x] = 1; map[MAP_H/TILE-1][x] = 1; }
+  for (let y = 0; y < MAP_H/TILE; y++) { map[y][0] = 1; map[y][MAP_W/TILE-1] = 1; }
+  // random obstacles
+  const rects = [
+    {x:200,y:200,w:120,h:180},{x:500,y:150,w:90,h:90},{x:800,y:300,w:150,h:60},
+    {x:1100,y:200,w:60,h:200},{x:1400,y:100,w:180,h:90},{x:1700,y:250,w:90,h:150},
+    {x:300,y:500,w:60,h:300},{x:600,y:450,w:200,h:60},{x:900,y:550,w:90,h:90},
+    {x:1200,y:450,w:150,h:60},{x:1500,y:500,w:60,h:200},{x:1800,y:400,w:120,h:90},
+    {x:100,y:900,w:200,h:60},{x:400,y:800,w:90,h:200},{x:700,y:850,w:180,h:60},
+    {x:1000,y:900,w:60,h:150},{x:1300,y:750,w:200,h:60},{x:1600,y:850,w:90,h:180},
+    {x:200,y:1200,w:150,h:90},{x:500,y:1100,w:90,h:180},{x:800,y:1200,w:200,h:60},
+    {x:1100,y:1100,w:60,h:200},{x:1400,y:1200,w:150,h:90},{x:1700,y:1100,w:90,h:150},
+    {x:300,y:1450,w:200,h:60},{x:600,y:1350,w:60,h:200},{x:900,y:1450,w:180,h:60},
+    {x:1200,y:1350,w:90,h:150},{x:1500,y:1450,w:200,h:60},{x:1800,y:1300,w:60,h:200},
+    {x:2000,y:600,w:90,h:90},{x:2100,y:400,w:60,h:200},{x:2000,y:1100,w:150,h:60},
+    {x:2100,y:900,w:60,h:150}
+  ];
+  obstacles = rects;
+}
+
+// ==================== PLAYER ====================
+let player = {
+  x: 300, y: 300, vx: 0, vy: 0, angle: 0,
+  hp: 100, maxHp: 100, kills: 0, deaths: 0,
+  weaponIdx: 0, weapons: [],
+  lastShot: 0, reloading: false, reloadEnd: 0,
+  name: '',
+  team: 0,
+  alive: true,
+};
+
+function resetWeapons() {
+  player.weapons = WEAPONS.map(w => ({...w}));
+}
+
+// ==================== BOTS ====================
+let bots = [];
+let bullets = [];
+let particles = [];
+let explosions = [];
+
+function spawnBot(i, totalPlayers) {
+  const angle = (i / totalPlayers) * Math.PI * 2;
+  const r = 600;
+  const cx = MAP_W / 2, cy = MAP_H / 2;
+  return {
+    x: cx + Math.cos(angle) * r + (Math.random()-0.5)*200,
+    y: cy + Math.sin(angle) * r + (Math.random()-0.5)*200,
+    angle: Math.random() * Math.PI * 2,
+    hp: 100, maxHp: 100, alive: true,
+    weaponIdx: Math.floor(Math.random() * 2),
+    weapons: WEAPONS.map(w => ({...w})),
+    kills: 0, deaths: 0,
+    lastShot: 0,
+    name: `בוט ${i + 1}`,
+    team: teamMode === 'teams' ? (i % 2) : i + 1,
+    aiState: 'patrol',
+    patrolTarget: { x: MAP_W/2, y: MAP_H/2 },
+    patrolTimer: 0,
+    stuckTimer: 0,
+    lastX: 0, lastY: 0,
+    id: 'bot_' + i,
+  };
+}
+
+// ==================== CANVAS ====================
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const mmCanvas = document.getElementById('minimapCanvas');
+const mmCtx = mmCanvas.getContext('2d');
+
+function resizeCanvas() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+// ==================== INPUT ====================
+const keys = {};
+let mouseX = 0, mouseY = 0;
+let mouseDown = false;
+let pointerLocked = false;
+
+document.addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (e.code === 'Tab') { e.preventDefault(); showScoreboard(true); }
+  if (e.code === 'Digit1') switchWeapon(0);
+  if (e.code === 'Digit2') switchWeapon(1);
+  if (e.code === 'Digit3') switchWeapon(2);
+  if (e.code === 'Digit4') switchWeapon(3);
+  if (e.code === 'KeyR') startReload();
+  if (e.code === 'Escape' && gameRunning) {
+    if (gamePaused) resumeGame(); else openPause();
+  }
+});
+document.addEventListener('keyup', e => {
+  keys[e.code] = false;
+  if (e.code === 'Tab') showScoreboard(false);
+});
+document.addEventListener('mousemove', e => {
+  if (pointerLocked) {
+    player.angle += e.movementX * 0.002;
+  }
+  mouseX = e.clientX; mouseY = e.clientY;
+});
+document.addEventListener('mousedown', e => { if (e.button === 0) mouseDown = true; });
+document.addEventListener('mouseup', e => { if (e.button === 0) mouseDown = false; });
+document.addEventListener('wheel', e => {
+  let idx = player.weaponIdx + (e.deltaY > 0 ? 1 : -1);
+  idx = ((idx % WEAPONS.length) + WEAPONS.length) % WEAPONS.length;
+  switchWeapon(idx);
+});
+canvas.addEventListener('click', () => {
+  if (gameRunning) canvas.requestPointerLock();
+});
+document.addEventListener('pointerlockchange', () => {
+  pointerLocked = document.pointerLockElement === canvas;
+});
+
+// ==================== SCREENS ====================
+function showScreen(id) {
+  ['home-screen','bots-screen','friends-screen'].forEach(s => {
+    document.getElementById(s).classList.add('hidden');
+  });
+  if (id) document.getElementById(id).classList.remove('hidden');
+}
+
+function showHome() {
+  showScreen('home-screen');
+  document.getElementById('home-welcome').textContent = `שלום, ${playerName}`;
+  gameRunning = false;
+}
+
+function showBotsScreen() { showScreen('bots-screen'); }
+function showFriendsScreen() {
+  roomCode = generateCode();
+  document.getElementById('room-code-display').textContent = roomCode;
+  document.getElementById('host-name-display').textContent = playerName + ' (מארח)';
+  showScreen('friends-screen');
+  // simulate players joining over time
+  simulateFriendJoins();
+}
+function backToHome() {
+  showHome();
+  if (fakeJoinInterval) clearInterval(fakeJoinInterval);
+}
+
+let fakeJoinInterval = null;
+const fakeNames = ['Noam','Yael','Dan','Shira','Omer','Tal','Lior','Avital','Gil','Maya'];
+let fakeJoinIdx = 0;
+function simulateFriendJoins() {
+  if (fakeJoinInterval) clearInterval(fakeJoinInterval);
+  // reset list
+  playerList = [{ name: playerName, host: true }];
+  renderPlayerList();
+  fakeJoinIdx = 0;
+}
+
+function joinRoom() {
+  const code = document.getElementById('join-code-input').value.trim().toUpperCase();
+  const status = document.getElementById('join-status');
+  if (code.length !== 6) { status.textContent = 'קוד לא תקין – נדרשות 3 אותיות + 3 ספרות'; return; }
+  if (!/^[A-Z]{3}[0-9]{3}$/.test(code) && !/^[0-9]{3}[A-Z]{3}$/.test(code) && !isValidCode(code)) {
+    status.textContent = 'קוד לא נמצא';
+    return;
+  }
+  status.textContent = '';
+  playerList.push({ name: playerName });
+  renderPlayerList();
+}
+
+function isValidCode(c) { return /^[A-Z0-9]{6}$/.test(c); }
+
+function renderPlayerList() {
+  const list = document.getElementById('players-list');
+  list.innerHTML = '';
+  playerList.forEach(p => {
+    const div = document.createElement('div');
+    div.className = 'player-item';
+    div.innerHTML = `<span class="dot"></span><span>${p.name}${p.host ? ' (מארח)' : ''}</span>`;
+    list.appendChild(div);
+  });
+}
+
+function generateCode() {
+  const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const digits = '0123456789';
+  let l = '', d = '';
+  for (let i = 0; i < 3; i++) l += letters[Math.floor(Math.random() * 26)];
+  for (let i = 0; i < 3; i++) d += digits[Math.floor(Math.random() * 10)];
+  return l + d;
+}
+
+// ==================== GAME START ====================
+function startBotGame() {
+  gameMode = 'bots';
+  teamMode = 'ffa';
+  botsCount = 19;
+  initGame();
+}
+
+function startFriendsGame() {
+  gameMode = 'friends';
+  teamMode = document.getElementById('game-mode-select').value;
+  const extra = parseInt(document.getElementById('bots-count-select').value) || 0;
+  const humanCount = playerList.length;
+  botsCount = Math.max(0, Math.min(20 - humanCount, extra > 0 ? extra : 20 - humanCount));
+  initGame();
+}
+
+function initGame() {
+  showScreen(null);
+  generateMap();
+  player.x = 150; player.y = 150;
+  player.hp = 100; player.kills = 0; player.deaths = 0;
+  player.weaponIdx = 0; player.alive = true;
+  player.name = playerName;
+  player.team = 0;
+  resetWeapons();
+  bullets = []; particles = []; explosions = [];
+
+  bots = [];
+  for (let i = 0; i < botsCount; i++) {
+    bots.push(spawnBot(i, botsCount));
+  }
+
+  document.getElementById('death-screen').style.display = 'none';
+  document.getElementById('pause-ingame-btn').style.display = 'block';
+  gameRunning = true;
+  canvas.requestPointerLock();
+  requestAnimationFrame(gameLoop);
+  updateHUD();
+}
+
+// ==================== RELOAD ====================
+function startReload() {
+  const w = player.weapons[player.weaponIdx];
+  if (player.reloading || w.ammo === w.maxAmmo || w.reserve === 0) return;
+  player.reloading = true;
+  player.reloadEnd = Date.now() + 1500;
+}
+
+// ==================== WEAPON SWITCH ====================
+function switchWeapon(idx) {
+  if (!gameRunning) return;
+  player.weaponIdx = idx;
+  player.reloading = false;
+  updateHUD();
+  updateWeaponSlots();
+}
+
+function updateWeaponSlots() {
+  for (let i = 0; i < 4; i++) {
+    document.getElementById('slot' + (i+1)).classList.toggle('active', i === player.weaponIdx);
+  }
+}
+
+// ==================== SHOOT ====================
+function shoot(shooter, fromBot) {
+  const w = shooter.weapons[shooter.weaponIdx];
+  const now = Date.now();
+  if (now - shooter.lastShot < w.rate) return;
+  if (w.ammo <= 0) return;
+  shooter.lastShot = now;
+  w.ammo--;
+  if (!fromBot) updateHUD();
+
+  const spread = w.spread;
+  const angle = shooter.angle + (Math.random() - 0.5) * spread;
+  const spd = w.speed;
+
+  bullets.push({
+    x: shooter.x, y: shooter.y,
+    vx: Math.cos(angle) * spd, vy: Math.sin(angle) * spd,
+    owner: fromBot ? shooter.id : 'player',
+    damage: w.damage, weapon: shooter.weaponIdx,
+    splash: w.splash, color: WEAPONS[shooter.weaponIdx].color,
+    dist: 0, maxDist: fromBot ? 700 : 1200,
+    team: shooter.team,
+  });
+
+  // muzzle flash
+  for (let i = 0; i < 5; i++) {
+    particles.push({
+      x: shooter.x, y: shooter.y,
+      vx: Math.cos(angle + (Math.random()-0.5)*0.5) * (3+Math.random()*4),
+      vy: Math.sin(angle + (Math.random()-0.5)*0.5) * (3+Math.random()*4),
+      life: 0.3 + Math.random()*0.2, maxLife: 0.5,
+      color: WEAPONS[shooter.weaponIdx].color, size: 2 + Math.random()*2,
+    });
+  }
+}
+
+// ==================== COLLISION ====================
+function collidesObstacle(x, y, r) {
+  r = r || 16;
+  if (x < r || y < r || x > MAP_W - r || y > MAP_H - r) return true;
+  for (const obs of obstacles) {
+    if (x + r > obs.x && x - r < obs.x + obs.w && y + r > obs.y && y - r < obs.y + obs.h) return true;
+  }
+  return false;
+}
+
+// ==================== GAME LOOP ====================
+let lastTime = 0;
+function gameLoop(ts) {
+  if (!gameRunning || gamePaused) return;
+  const dt = Math.min((ts - lastTime) / 1000, 0.05);
+  lastTime = ts;
+
+  update(dt);
+  render();
+  requestAnimationFrame(gameLoop);
+}
+
+function update(dt) {
+  if (!player.alive) return;
+
+  // reload
+  if (player.reloading && Date.now() >= player.reloadEnd) {
+    const w = player.weapons[player.weaponIdx];
+    const need = w.maxAmmo - w.ammo;
+    const take = Math.min(need, w.reserve);
+    w.ammo += take; w.reserve -= take;
+    player.reloading = false;
+    updateHUD();
+  }
+
+  // player movement
+  const spd = 180;
+  let dx = 0, dy = 0;
+  if (keys['KeyW'] || keys['ArrowUp']) dy -= 1;
+  if (keys['KeyS'] || keys['ArrowDown']) dy += 1;
+  if (keys['KeyA'] || keys['ArrowLeft']) dx -= 1;
+  if (keys['KeyD'] || keys['ArrowRight']) dx += 1;
+  const len = Math.sqrt(dx*dx+dy*dy);
+  if (len > 0) { dx /= len; dy /= len; }
+  const nx = player.x + dx * spd * dt;
+  const ny = player.y + dy * spd * dt;
+  if (!collidesObstacle(nx, player.y)) player.x = nx;
+  if (!collidesObstacle(player.x, ny)) player.y = ny;
+
+  // aim with pointer lock
+  if (!pointerLocked) {
+    const cx = canvas.width / 2, cy = canvas.height / 2;
+    player.angle = Math.atan2(mouseY - cy, mouseX - cx);
+  }
+
+  // shoot
+  const w = player.weapons[player.weaponIdx];
+  if (mouseDown && (w.auto || !player.lastMouseDown)) {
+    if (!player.reloading) shoot(player, false);
+    if (w.ammo <= 0 && w.reserve > 0) startReload();
+  }
+  player.lastMouseDown = mouseDown;
+
+  // bots AI
+  updateBots(dt);
+
+  // bullets
+  updateBullets(dt);
+
+  // particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx; p.y += p.vy;
+    p.life -= dt;
+    p.vx *= 0.92; p.vy *= 0.92;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+
+  // explosions
+  for (let i = explosions.length - 1; i >= 0; i--) {
+    explosions[i].t += dt;
+    if (explosions[i].t > 0.5) explosions.splice(i, 1);
+  }
+}
+
+function updateBots(dt) {
+  const now = Date.now();
+  bots.forEach(bot => {
+    if (!bot.alive) return;
+    bot.patrolTimer -= dt;
+
+    // find nearest enemy
+    let target = null;
+    let minDist = 600;
+    // check player
+    if (player.alive && (teamMode === 'ffa' || bot.team !== player.team)) {
+      const d = dist(bot, player);
+      if (d < minDist) { minDist = d; target = player; }
+    }
+    bots.forEach(b => {
+      if (b === bot || !b.alive) return;
+      if (teamMode !== 'ffa' && b.team === bot.team) return;
+      const d = dist(bot, b);
+      if (d < minDist) { minDist = d; target = b; }
+    });
+
+    if (target) {
+      const ang = Math.atan2(target.y - bot.y, target.x - bot.x);
+      bot.angle = ang + (Math.random() - 0.5) * 0.3;
+      // move toward target but maintain distance
+      const moveSpd = minDist > 150 ? 120 : (minDist < 80 ? -80 : 0);
+      const nx = bot.x + Math.cos(ang) * moveSpd * dt;
+      const ny = bot.y + Math.sin(ang) * moveSpd * dt;
+      if (!collidesObstacle(nx, bot.y)) bot.x = nx;
+      if (!collidesObstacle(bot.x, ny)) bot.y = ny;
+      // shoot
+      if (minDist < 500 && Math.random() < 0.6) {
+        const bw = bot.weapons[bot.weaponIdx];
+        if (bw.ammo <= 0) {
+          const need = bw.maxAmmo;
+          bw.ammo = need; bw.reserve = Math.max(0, bw.reserve - need);
+        }
+        shoot(bot, true);
+      }
+    } else {
+      // patrol
+      if (bot.patrolTimer <= 0) {
+        bot.patrolTarget = { x: 100 + Math.random()*(MAP_W-200), y: 100 + Math.random()*(MAP_H-200) };
+        bot.patrolTimer = 2 + Math.random() * 3;
+      }
+      const ang = Math.atan2(bot.patrolTarget.y - bot.y, bot.patrolTarget.x - bot.x);
+      bot.angle = ang;
+      const nx = bot.x + Math.cos(ang) * 90 * dt;
+      const ny = bot.y + Math.sin(ang) * 90 * dt;
+      if (!collidesObstacle(nx, bot.y)) bot.x = nx; else bot.patrolTimer = 0;
+      if (!collidesObstacle(bot.x, ny)) bot.y = ny; else bot.patrolTimer = 0;
+    }
+  });
+}
+
+function updateBullets(dt) {
+  for (let i = bullets.length - 1; i >= 0; i--) {
+    const b = bullets[i];
+    b.x += b.vx; b.y += b.vy;
+    b.dist += Math.sqrt(b.vx*b.vx + b.vy*b.vy);
+
+    // wall hit
+    if (collidesObstacle(b.x, b.y, 4)) {
+      spawnImpact(b.x, b.y, b.color);
+      if (b.splash > 0) doSplash(b);
+      bullets.splice(i, 1);
+      continue;
+    }
+    if (b.dist > b.maxDist) { bullets.splice(i, 1); continue; }
+
+    // hit player
+    if (b.owner !== 'player' && player.alive) {
+      if (dist(b, player) < 18) {
+        hitEntity(player, b, false);
+        if (b.splash > 0) doSplash(b);
+        bullets.splice(i, 1);
+        continue;
+      }
+    }
+
+    // hit bots
+    let hit = false;
+    for (let j = 0; j < bots.length; j++) {
+      const bot = bots[j];
+      if (!bot.alive) continue;
+      if (b.owner === bot.id) continue;
+      if (b.team !== undefined && b.team === bot.team && teamMode !== 'ffa') continue;
+      if (dist(b, bot) < 18) {
+        hitEntity(bot, b, true, j);
+        if (b.splash > 0) doSplash(b);
+        hit = true;
+        break;
+      }
+    }
+    if (hit) { bullets.splice(i, 1); continue; }
+  }
+}
+
+function doSplash(b) {
+  explosions.push({ x: b.x, y: b.y, r: b.splash, t: 0, color: b.color });
+  // damage in radius
+  if (dist(b, player) < b.splash && b.owner !== 'player') hitEntity(player, {...b, damage: b.damage * 0.5}, false);
+  bots.forEach((bot, j) => {
+    if (!bot.alive) return;
+    if (b.owner === bot.id) return;
+    if (dist(b, bot) < b.splash) hitEntity(bot, {...b, damage: b.damage * 0.5}, true, j);
+  });
+}
+
+function hitEntity(entity, bullet, isBot, botIdx) {
+  entity.hp -= bullet.damage;
+  if (!isBot) {
+    flashHit();
+    updateHUD();
+  }
+  if (entity.hp <= 0 && entity.alive) {
+    entity.alive = false;
+    entity.deaths++;
+    if (!isBot) {
+      player.alive = false;
+      showDeathScreen();
+    } else {
+      // who killed?
+      if (bullet.owner === 'player') {
+        player.kills++;
+        addKillFeed(playerName, entity.name);
+        updateHUD();
+        document.getElementById('kills-count').textContent = player.kills;
+        setTimeout(() => { if (botIdx !== undefined) respawnBot(botIdx); }, 3000);
+      } else {
+        // bot killed bot
+        const killer = bots.find(b => b.id === bullet.owner);
+        if (killer) { killer.kills++; addKillFeed(killer.name, entity.name); }
+        setTimeout(() => { if (botIdx !== undefined) respawnBot(botIdx); }, 3000);
+      }
+    }
+  }
+}
+
+function respawnBot(idx) {
+  const b = bots[idx];
+  b.hp = 100; b.alive = true;
+  b.x = 100 + Math.random() * (MAP_W - 200);
+  b.y = 100 + Math.random() * (MAP_H - 200);
+  b.weapons = WEAPONS.map(w => ({...w}));
+}
+
+function showDeathScreen() {
+  const ds = document.getElementById('death-screen');
+  ds.style.display = 'flex';
+  let t = 3;
+  const timer = document.getElementById('respawn-timer');
+  const iv = setInterval(() => {
+    t--;
+    timer.textContent = `מתחיל מחדש בעוד ${t}...`;
+    if (t <= 0) {
+      clearInterval(iv);
+      player.hp = 100; player.alive = true;
+      player.x = 100 + Math.random()*(MAP_W-200);
+      player.y = 100 + Math.random()*(MAP_H-200);
+      resetWeapons();
+      ds.style.display = 'none';
+      updateHUD();
+    }
+  }, 1000);
+}
+
+function flashHit() {
+  const el = document.getElementById('hit-flash');
+  el.style.opacity = '1';
+  setTimeout(() => { el.style.opacity = '0'; }, 120);
+}
+
+function addKillFeed(killer, victim) {
+  const feed = document.getElementById('kill-feed');
+  const el = document.createElement('div');
+  el.className = 'kill-entry';
+  el.textContent = `${killer} ▶ ${victim}`;
+  feed.appendChild(el);
+  setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 1000); }, 3000);
+}
+
+function dist(a, b) { return Math.sqrt((a.x-b.x)**2+(a.y-b.y)**2); }
+
+// ==================== RENDER ====================
+function render() {
+  const W = canvas.width, H = canvas.height;
+  ctx.fillStyle = '#1a1a10';
+  ctx.fillRect(0, 0, W, H);
+
+  const cx = W/2, cy = H/2;
+  const camX = player.x - cx;
+  const camY = player.y - cy;
+
+  ctx.save();
+  ctx.translate(-camX, -camY);
+
+  // ground
+  ctx.fillStyle = '#1e1e14';
+  ctx.fillRect(0, 0, MAP_W, MAP_H);
+  // ground texture
+  ctx.fillStyle = '#1c1c12';
+  for (let y = 0; y < MAP_H; y += TILE) {
+    for (let x = 0; x < MAP_W; x += TILE) {
+      if ((x/TILE + y/TILE) % 2 === 0) ctx.fillRect(x, y, TILE, TILE);
+    }
+  }
+
+  // obstacles
+  ctx.fillStyle = '#2a2a20';
+  ctx.strokeStyle = '#3a3a28';
+  ctx.lineWidth = 2;
+  obstacles.forEach(obs => {
+    ctx.fillRect(obs.x, obs.y, obs.w, obs.h);
+    ctx.strokeRect(obs.x, obs.y, obs.w, obs.h);
+  });
+
+  // border walls
+  ctx.fillStyle = '#333320';
+  ctx.fillRect(0, 0, MAP_W, TILE);
+  ctx.fillRect(0, MAP_H-TILE, MAP_W, TILE);
+  ctx.fillRect(0, 0, TILE, MAP_H);
+  ctx.fillRect(MAP_W-TILE, 0, TILE, MAP_H);
+
+  // explosions
+  explosions.forEach(ex => {
+    const alpha = 1 - ex.t / 0.5;
+    ctx.beginPath();
+    ctx.arc(ex.x, ex.y, ex.r * (0.5 + ex.t), 0, Math.PI*2);
+    ctx.fillStyle = `rgba(255,100,0,${alpha * 0.5})`;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(ex.x, ex.y, ex.r * 0.4 * (0.5 + ex.t), 0, Math.PI*2);
+    ctx.fillStyle = `rgba(255,220,0,${alpha * 0.7})`;
+    ctx.fill();
+  });
+
+  // bullets
+  bullets.forEach(b => {
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, 3, 0, Math.PI*2);
+    ctx.fillStyle = b.color;
+    ctx.fill();
+    // trail
+    ctx.beginPath();
+    ctx.moveTo(b.x, b.y);
+    ctx.lineTo(b.x - b.vx * 3, b.y - b.vy * 3);
+    ctx.strokeStyle = b.color + '66';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  });
+
+  // particles
+  particles.forEach(p => {
+    const alpha = p.life / p.maxLife;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * alpha, 0, Math.PI*2);
+    ctx.fillStyle = p.color + Math.floor(alpha * 255).toString(16).padStart(2,'0');
+    ctx.fill();
+  });
+
+  // bots
+  bots.forEach(bot => {
+    if (!bot.alive) return;
+    drawSoldier(bot, false);
+  });
+
+  // player
+  if (player.alive) drawSoldier(player, true);
+
+  // names
+  const allEntities = [player, ...bots.filter(b => b.alive)];
+  allEntities.forEach(e => {
+    if (e === player) return;
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(e.x - 24, e.y - 36, 48, 14);
+    ctx.fillStyle = '#fff';
+    ctx.font = '10px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillText(e.name, e.x, e.y - 25);
+    // health bar
+    ctx.fillStyle = '#333';
+    ctx.fillRect(e.x - 24, e.y - 22, 48, 5);
+    ctx.fillStyle = e.hp > 50 ? '#44ff88' : e.hp > 25 ? '#ffcc00' : '#ff4444';
+    ctx.fillRect(e.x - 24, e.y - 22, 48 * (e.hp / e.maxHp), 5);
+  });
+
+  ctx.restore();
+
+  // minimap
+  renderMinimap(camX, camY);
+}
+
+function drawSoldier(entity, isPlayer) {
+  const x = entity.x, y = entity.y, a = entity.angle;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(a);
+
+  // shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  ctx.beginPath();
+  ctx.ellipse(2, 4, 12, 8, 0, 0, Math.PI*2);
+  ctx.fill();
+
+  // body
+  ctx.fillStyle = isPlayer ? '#4a6e4a' : (entity.team === 0 ? '#6e4a4a' : '#4a4a6e');
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 12, 10, 0, 0, Math.PI*2);
+  ctx.fill();
+
+  // vest
+  ctx.fillStyle = isPlayer ? '#3a5c3a' : '#5c3a3a';
+  ctx.fillRect(-7, -6, 14, 12);
+
+  // helmet
+  ctx.fillStyle = isPlayer ? '#2e4e2e' : '#4e2e2e';
+  ctx.beginPath();
+  ctx.arc(0, -2, 8, Math.PI, 0);
+  ctx.fill();
+
+  // gun
+  const w = WEAPONS[entity.weaponIdx];
+  ctx.fillStyle = '#888';
+  if (entity.weaponIdx === 0) { // M16
+    ctx.fillRect(6, -2, 16, 3);
+  } else if (entity.weaponIdx === 1) { // pistol
+    ctx.fillRect(6, -2, 10, 3);
+  } else if (entity.weaponIdx === 2 || entity.weaponIdx === 3) { // bazooka/rpg
+    ctx.fillStyle = '#666';
+    ctx.fillRect(4, -3, 20, 5);
+    ctx.fillStyle = '#444';
+    ctx.fillRect(20, -4, 6, 7);
+  }
+
+  ctx.restore();
+}
+
+function renderMinimap(camX, camY) {
+  const mm = mmCanvas;
+  const mc = mmCtx;
+  const scale = mm.width / MAP_W;
+  mc.fillStyle = '#111';
+  mc.fillRect(0, 0, mm.width, mm.height);
+  // obstacles
+  mc.fillStyle = '#333';
+  obstacles.forEach(o => mc.fillRect(o.x*scale, o.y*scale, o.w*scale, o.h*scale));
+  // bots
+  bots.forEach(b => {
+    if (!b.alive) return;
+    mc.fillStyle = '#ff6644';
+    mc.beginPath(); mc.arc(b.x*scale, b.y*scale, 2, 0, Math.PI*2); mc.fill();
+  });
+  // player
+  mc.fillStyle = '#44ff88';
+  mc.beginPath(); mc.arc(player.x*scale, player.y*scale, 3, 0, Math.PI*2); mc.fill();
+  // viewport rect
+  const vw = (canvas.width / MAP_W) * mm.width;
+  const vh = (canvas.height / MAP_H) * mm.height;
+  mc.strokeStyle = 'rgba(255,255,255,0.3)';
+  mc.lineWidth = 1;
+  mc.strokeRect(camX*scale, camY*scale, vw, vh);
+}
+
+function spawnImpact(x, y, color) {
+  for (let i = 0; i < 6; i++) {
+    const ang = Math.random() * Math.PI * 2;
+    particles.push({ x, y, vx: Math.cos(ang)*(2+Math.random()*3), vy: Math.sin(ang)*(2+Math.random()*3), life: 0.3, maxLife: 0.3, color, size: 2 });
+  }
+}
+
+// ==================== HUD ====================
+function updateHUD() {
+  const w = player.weapons[player.weaponIdx];
+  document.getElementById('health-fill').style.width = (player.hp / player.maxHp * 100) + '%';
+  document.getElementById('health-num').textContent = Math.max(0, player.hp);
+  document.getElementById('weapon-name').textContent = WEAPONS[player.weaponIdx].name;
+  document.getElementById('ammo-count').textContent = player.reloading ? 'טוען...' : `${w.ammo} / ${w.reserve}`;
+}
+
+function showScoreboard(show) {
+  const sb = document.getElementById('scoreboard');
+  if (!show) { sb.style.display = 'none'; return; }
+  sb.style.display = 'block';
+  const list = document.getElementById('score-list');
+  const all = [player, ...bots].map(e => ({name: e.name, kills: e.kills, deaths: e.deaths}));
+  all.sort((a,b) => b.kills - a.kills);
+  list.innerHTML = all.map((e,i) => `<div class="score-row"><span class="name">${i+1}. ${e.name}</span><span class="kills">${e.kills}K</span><span class="deaths">${e.deaths}D</span></div>`).join('');
+}
+
+function openPause() {
+  gamePaused = true;
+  document.getElementById('pause-menu').classList.add('visible');
+  document.exitPointerLock();
+}
+
+function resumeGame() {
+  gamePaused = false;
+  document.getElementById('pause-menu').classList.remove('visible');
+  canvas.requestPointerLock();
+  requestAnimationFrame(ts => { lastTime = ts; gameLoop(ts); });
+}
+
+function restartGame() {
+  document.getElementById('pause-menu').classList.remove('visible');
+  gamePaused = false;
+  initGame();
+}
+
+function quitToMenu() {
+  gamePaused = false;
+  gameRunning = false;
+  document.getElementById('pause-menu').classList.remove('visible');
+  document.getElementById('pause-ingame-btn').style.display = 'none';
+  document.getElementById('death-screen').style.display = 'none';
+  document.exitPointerLock();
+  showHome();
+}
+
+function pauseGame() { openPause(); }
+
+// ==================== NAME ENTRY ====================
+function confirmName() {
+  const val = document.getElementById('name-input').value.trim();
+  if (!val) return;
+  playerName = val;
+  document.getElementById('name-modal').classList.add('hidden');
+  showHome();
+}
+document.getElementById('name-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') confirmName();
+});
+
+// start
+document.getElementById('name-modal').classList.remove('hidden');
+</script>
+</body>
+</html>
